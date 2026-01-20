@@ -1,5 +1,5 @@
 #!/bin/sh
-# WRiter script for assignment 1 takes 2 arguments :- 1. Full path to a file on filesystem 2. Text string which will be written within this file
+# Writer script for assignment 1 takes 2 arguments :- 1. Full path to a file on filesystem 2. Text string which will be written within this file
 # Author :- Aditya Ganesh
 # Date :- 01/19/26
 

@@ -52,9 +52,18 @@ fi
 #make clean
 #make
 
+echo "Compiling the writer application..."
+make clean
+make
+
+if [ ! -f ./writer ]; then
+    echo "ERROR: writer binary not found after compilation"
+    exit 1
+fi
+
 for i in $( seq 1 $NUMFILES)
 do
-	./writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
 OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")

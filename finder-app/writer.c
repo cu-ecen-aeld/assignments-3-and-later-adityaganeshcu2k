@@ -1,3 +1,9 @@
+/*
+* Date :- 1/23/26
+* Author :- Aditya Ganesh
+* Reference :- https://linux.die.net/man/3/syslog 
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

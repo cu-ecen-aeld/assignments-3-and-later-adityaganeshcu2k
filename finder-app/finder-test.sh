@@ -53,13 +53,11 @@ fi
 #make
 
 echo "Compiling the writer application..."
-make clean
-make
-
 if [ ! -f ./writer ]; then
-    echo "ERROR: writer binary not found after compilation"
-    exit 1
+    make clean
+    make
 fi
+
 
 for i in $( seq 1 $NUMFILES)
 do

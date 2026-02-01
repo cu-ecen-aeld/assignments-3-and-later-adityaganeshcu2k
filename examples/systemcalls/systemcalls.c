@@ -1,5 +1,9 @@
 #include "systemcalls.h"
-
+#include <stdlib.h>     // system(), exit(), EXIT_FAILURE
+#include <unistd.h>     // fork(), execv(), dup2(), close(), STDOUT_FILENO
+#include <sys/types.h>  // pid_t
+#include <sys/wait.h>   // waitpid(), WIFEXITED, WEXITSTATUS
+#include <fcntl.h>      // open(), O_WRONLY, O_CREAT, O_TRUNC
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -10,14 +14,24 @@
 bool do_system(const char *cmd)
 {
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
+    if(NULL == cmd)
+    {
+    	return false;
+    }
+    
+    int status = system(cmd);
+    
+    if(status == -1)
+    {
+    	return false;
+    }
+    
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
 
-    return true;
+    return false;
+
 }
 
 /**
@@ -47,7 +61,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 /*
  * TODO:
@@ -60,8 +74,32 @@ bool do_exec(int count, ...)
 */
 
     va_end(args);
+    
+    pid_t pid = fork();
 
-    return true;
+    if (pid == -1) {
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child
+        execv(command[0], command);
+        // execv only returns on failure
+        exit(EXIT_FAILURE);
+    }
+
+    // Parent
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        return false;
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
+
+    return false;
+
 }
 
 /**
@@ -82,7 +120,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 
 /*
@@ -94,6 +132,43 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 */
 
     va_end(args);
+    
+    
+    pid_t pid = fork();
 
-    return true;
+    if (pid == -1) {
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child
+        int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            exit(EXIT_FAILURE);
+        }
+
+        if (dup2(fd, STDOUT_FILENO) < 0) {
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
+
+        close(fd);
+
+        execv(command[0], command);
+        exit(EXIT_FAILURE);
+    }
+
+    // Parent
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        return false;
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
+
+    return false;
+
+
 }

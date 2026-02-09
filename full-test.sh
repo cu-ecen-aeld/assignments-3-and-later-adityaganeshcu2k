@@ -2,6 +2,7 @@
 # This script can be copied into your base directory for use with
 # automated testing using assignment-autotest.  It automates the
 # steps described in https://github.com/cu-ecen-5013/assignment-autotest/blob/master/README.md#running-tests
+#Reference :- https://chatgpt.com/c/69858bc6-9894-832b-b78c-e0dd389c4d42
 set -e
 
 cd `dirname $0`

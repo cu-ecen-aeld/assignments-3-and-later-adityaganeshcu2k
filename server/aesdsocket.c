@@ -1,3 +1,4 @@
+/*References :- https://beej.us/guide/bgnet/html/ , http://man7.org/linux/man-pages/man8/start-stop-daemon.8.html*/
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

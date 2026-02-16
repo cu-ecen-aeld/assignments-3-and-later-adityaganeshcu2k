@@ -1,4 +1,4 @@
-/*References :- https://beej.us/guide/bgnet/html/ , http://man7.org/linux/man-pages/man8/start-stop-daemon.8.html*/
+/*References :- https://beej.us/guide/bgnet/html/ , http://man7.org/linux/man-pages/man8/start-stop-daemon.8.html , https://chatgpt.com/share/6992b468-ee74-8008-834b-cb796a405b88*/
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

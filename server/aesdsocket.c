@@ -12,6 +12,9 @@
 #include <arpa/inet.h>
 #include <syslog.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <sys/queue.h>
+#include <time.h>
 
 #define PORT 9000
 #define DATA_FILE "/var/tmp/aesdsocketdata"
@@ -19,11 +22,23 @@
 
 static int server_fd = -1;
 static volatile sig_atomic_t exit_requested = 0;
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+struct thread_node {
+    pthread_t thread_id;
+    int client_fd;
+    int thread_complete;
+    SLIST_ENTRY(thread_node) entries;
+};
+
+SLIST_HEAD(thread_list_head, thread_node);
+static struct thread_list_head thread_list;
 
 void signal_handler(int signo)
 {
-    syslog(LOG_INFO, "Caught signal, exiting");
     exit_requested = 1;
+    if (server_fd != -1)
+        close(server_fd);
 }
 
 void cleanup()
@@ -35,6 +50,125 @@ void cleanup()
     closelog();
 }
 
+void* timestamp_thread(void *arg)
+{
+    while (!exit_requested)
+    {
+    	for (int i = 0; i < 10 && !exit_requested; i++)
+        	sleep(1);
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&now);
+
+        char buffer[128];
+        strftime(buffer, sizeof(buffer),
+                 "timestamp:%a, %d %b %Y %H:%M:%S %z\n",
+                 tm_info);
+
+        pthread_mutex_lock(&file_mutex);
+
+        int fd = open(DATA_FILE,
+                      O_CREAT | O_WRONLY | O_APPEND,
+                      0644);
+        if (fd >= 0)
+        {
+            write(fd, buffer, strlen(buffer));
+            close(fd);
+        }
+
+        pthread_mutex_unlock(&file_mutex);
+        
+  
+
+    }
+    return NULL;
+}
+
+void* client_handler(void *arg)
+{
+    struct thread_node *node = (struct thread_node*)arg;
+    int client_fd = node->client_fd;
+
+    char buffer[BUFFER_SIZE];
+    char *packet = NULL;
+    size_t packet_size = 0;
+
+    ssize_t bytes_read;
+
+    while ((bytes_read = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
+    {
+        char *newline = memchr(buffer, '\n', bytes_read);
+
+        if (newline)
+        {
+            size_t chunk_len = newline - buffer + 1;
+
+            char *temp = realloc(packet, packet_size + chunk_len);
+            if (!temp) break;
+
+            packet = temp;
+            memcpy(packet + packet_size, buffer, chunk_len);
+            packet_size += chunk_len;
+
+            // LOCK FILE WRITE
+            pthread_mutex_lock(&file_mutex);
+
+            int fd = open(DATA_FILE, O_CREAT | O_WRONLY | O_APPEND, 0644);
+            if (fd >= 0)
+            {
+                write(fd, packet, packet_size);
+                close(fd);
+            }
+
+            pthread_mutex_unlock(&file_mutex);
+
+            free(packet);
+            packet = NULL;
+            packet_size = 0;
+
+            // LOCK FILE READ
+            pthread_mutex_lock(&file_mutex);
+
+            fd = open(DATA_FILE, O_RDONLY);
+            if (fd >= 0)
+            {
+                while ((bytes_read = read(fd, buffer, BUFFER_SIZE)) > 0)
+                {
+                    ssize_t total_sent = 0;
+                    while (total_sent < bytes_read)
+                    {
+                        ssize_t sent = send(client_fd,
+                                            buffer + total_sent,
+                                            bytes_read - total_sent,
+                                            0);
+                        if (sent <= 0)
+                            break;
+                        total_sent += sent;
+                    }
+                }
+                close(fd);
+            }
+
+            pthread_mutex_unlock(&file_mutex);
+
+            break;
+        }
+        else
+        {
+            char *temp = realloc(packet, packet_size + bytes_read);
+            if (!temp) break;
+
+            packet = temp;
+            memcpy(packet + packet_size, buffer, bytes_read);
+            packet_size += bytes_read;
+        }
+    }
+
+    free(packet);
+    close(client_fd);
+    node->thread_complete = 1;
+    return NULL;
+}
+
 int main(int argc, char *argv[])
 {
     int daemon_mode = 0;
@@ -44,6 +178,7 @@ int main(int argc, char *argv[])
 
     openlog("aesdsocket", LOG_PID, LOG_USER);
 
+    remove(DATA_FILE);
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;
@@ -86,12 +221,23 @@ int main(int argc, char *argv[])
     if (listen(server_fd, 10) < 0)
         return -1;
 
+    pthread_t time_thread;
+    pthread_create(&time_thread,
+                NULL,
+                timestamp_thread,
+                NULL);
+
+    SLIST_INIT(&thread_list);
+
     while (!exit_requested)
     {
         struct sockaddr_in client_addr;
         socklen_t addrlen = sizeof(client_addr);
 
-        int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &addrlen);
+        int client_fd = accept(server_fd,
+                            (struct sockaddr*)&client_addr,
+                            &addrlen);
+
         if (client_fd < 0)
         {
             if (exit_requested)
@@ -99,97 +245,55 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        struct thread_node *node = malloc(sizeof(struct thread_node));
+	
+	
+        node->client_fd = client_fd;
+        node->thread_complete = 0;
 
-        syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+        pthread_create(&node->thread_id,
+                    NULL,
+                    client_handler,
+                    node);
 
-        char buffer[BUFFER_SIZE];
-        char *packet = NULL;
-        size_t packet_size = 0;
+        SLIST_INSERT_HEAD(&thread_list,
+                        node,
+                        entries);
 
-        ssize_t bytes_read;
-        while ((bytes_read = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
-        {
-            char *newline = memchr(buffer, '\n', bytes_read);
+        // CLEANUP FINISHED THREADS
+	struct thread_node *iter = SLIST_FIRST(&thread_list);
+	struct thread_node *tmp;
 
-            if (newline)
-            {
-                size_t chunk_len = newline - buffer + 1;
+	while (iter != NULL)
+	{
+	    tmp = SLIST_NEXT(iter, entries);
 
-                char *temp = realloc(packet, packet_size + chunk_len);
-                if (!temp)
-                {
-                    free(packet);
-                    packet = NULL;
-                    break;
-                }
-                packet = temp;
+	    if (iter->thread_complete)
+	    {
+		pthread_join(iter->thread_id, NULL);
+		SLIST_REMOVE(&thread_list, iter, thread_node, entries);
+		free(iter);
+	    }
 
-                memcpy(packet + packet_size, buffer, chunk_len);
-                packet_size += chunk_len;
-
-                int fd = open(DATA_FILE, O_CREAT | O_WRONLY | O_APPEND, 0644);
-                if (fd >= 0)
-                {
-                    write(fd, packet, packet_size);
-                    close(fd);
-                }
-
-                free(packet);
-                packet = NULL;
-                packet_size = 0;
-
-                fd = open(DATA_FILE, O_RDONLY);
-                if (fd >= 0)
-                {
-                    while ((bytes_read = read(fd, buffer, BUFFER_SIZE)) > 0)
-                    {
-                            ssize_t total_sent = 0;
-
-			    while (total_sent < bytes_read)
-			    {
-				ssize_t sent = send(client_fd,
-						    buffer + total_sent,
-						    bytes_read - total_sent,
-						    0);
-
-				if (sent <= 0)
-				    break;
-
-				total_sent += sent;
-			    }
-
-			    if (total_sent < bytes_read)
-				break;   // send error
-                    }
-
-                    close(fd);
-                }
-
-                break;
-            }
-            else
-            {
-                char *temp = realloc(packet, packet_size + bytes_read);
-                if (!temp)
-                {
-                    free(packet);
-                    packet = NULL;
-                    break;
-                }
-                packet = temp;
-
-                memcpy(packet + packet_size, buffer, bytes_read);
-                packet_size += bytes_read;
-            }
-        }
-
-        free(packet);
-        close(client_fd);
-
-        syslog(LOG_INFO, "Closed connection from %s", client_ip);
+	    iter = tmp;
+	}
     }
+
+    // Join remaining client threads
+    while (!SLIST_EMPTY(&thread_list))
+    {
+        struct thread_node *node =
+            SLIST_FIRST(&thread_list);
+
+        pthread_join(node->thread_id, NULL);
+        SLIST_REMOVE_HEAD(&thread_list, entries);
+        free(node);
+    }
+
+    // Stop timestamp thread
+    pthread_join(time_thread, NULL);
+
+    pthread_mutex_destroy(&file_mutex);
 
     cleanup();
     return 0;

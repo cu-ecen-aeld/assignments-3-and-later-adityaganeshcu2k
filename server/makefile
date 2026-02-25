@@ -1,7 +1,7 @@
 # Use cross compiler if provided (Buildroot sets CROSS_COMPILE)
 CC ?= $(CROSS_COMPILE)gcc
 
-CFLAGS ?= -Wall -Werror -g
+CFLAGS ?= -Wall -Werror -g -pthread
 LDFLAGS ?=
 
 TARGET = aesdsocket

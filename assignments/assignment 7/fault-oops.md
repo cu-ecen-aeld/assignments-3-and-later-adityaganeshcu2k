@@ -1,3 +1,4 @@
+Reference :- https://chatgpt.com/share/69a51adf-c8e8-8008-906d-b62c9ab5f3c0
 # Trace captured during kernel crash
 echo "hello world" > /dev/faulty
 Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
@@ -72,7 +73,7 @@ Disassembly of section .text:
 3. Here the thing to notice is the pc value given durnig kernel crash was :-faulty_write+0x10/0x20 [faulty] 
 4. This tells us the crash happened in 0x10 which according to disassembly corresponds to str wzr,[x1] . Since our architecture is arm-64 bit I referred to this pdf chapter 8 "https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/Learn%20the%20Architecture/Armv8-A%20Instruction%20Set%20Architecture.pdf?revision=ebf53406-04fd-4c67-a485-1b329febfb3e&utm_source=chatgpt.com"
 
- 5. According to the arm v8 instruction architecture we see that the instruction means to *(uint32_t *)x1 = 0; which means we are dereferencing x1 . 
+ 5. According to the arm v8 instruction sey architecture we see that the instruction str wzr, [x1] means to *(uint32_t *)x1 = 0; which means we are dereferencing x1 . 
  
  6. Now comapring this to the faulty.c we see that this error occured inside faulty_write as mentioned in the disassembly and after going to this function we can see we are executing this line *(int *)0 = 0; which causes the crash.
 

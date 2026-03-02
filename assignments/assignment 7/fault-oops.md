@@ -1,4 +1,5 @@
 Reference :- https://chatgpt.com/share/69a51adf-c8e8-8008-906d-b62c9ab5f3c0
+Reference :- https://chatgpt.com/share/69a51af8-f49c-8008-8df2-783673ce455e
 # Trace captured during kernel crash
 echo "hello world" > /dev/faulty
 Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000

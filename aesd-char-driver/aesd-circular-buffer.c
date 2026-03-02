@@ -12,7 +12,7 @@
 #include <linux/string.h>
 #else
 #include <string.h>
-#endif>
+#endif
 #include "aesd-circular-buffer.h"
 
 /**

@@ -25,38 +25,45 @@
  * @return the struct aesd_buffer_entry structure representing the position described by char_offset, or
  * NULL if this position is not available in the buffer (not enough data is written).
  */
-struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
-            size_t char_offset, size_t *entry_offset_byte_rtn )
+struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
+    struct aesd_circular_buffer *buffer,
+    size_t char_offset,
+    size_t *entry_offset_byte_rtn)
 {
-    size_t cumulative_size = 0;
-    uint8_t index = buffer->out_offs;
-    uint8_t entries_checked = 0;
+    // Reset output
+    *entry_offset_byte_rtn = 0;
 
-    while (entries_checked < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
-    {
-        /* Stop if buffer not full and we reached write position */
-        if (!buffer->full && index == buffer->in_offs)
-            break;
+    // Empty buffer?
+    if (!buffer->full && buffer->in_offs == buffer->out_offs) {
+        return NULL;
+    }
 
-        struct aesd_buffer_entry *entry =
-            &buffer->entry[index];
-            
-        /* Check if offset lies inside this entry */
-        if (char_offset < cumulative_size + entry->size)
-        {
-            *entry_offset_byte_rtn =
-                char_offset - cumulative_size;
+    size_t total_entries_checked = 0;
+    uint8_t idx = buffer->out_offs;
 
+    while (total_entries_checked < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
+
+        struct aesd_buffer_entry *entry = &buffer->entry[idx];
+
+        // If this entry is large enough to contain the char_offset
+        if (char_offset < entry->size) {
+            *entry_offset_byte_rtn = char_offset;
             return entry;
         }
 
-        cumulative_size += entry->size;
+        // Otherwise, move to the next entry
+        char_offset -= entry->size;
+        idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        total_entries_checked++;
 
-        index = (index + 1) %
-                AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-
-        entries_checked++;
+        // Stop if buffer not full and we've reached the write position
+        if (!buffer->full && idx == buffer->in_offs) {
+            break;
+        }
     }
+
+    // Offset not found
+    *entry_offset_byte_rtn = 0;
     return NULL;
 }
 

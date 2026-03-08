@@ -57,15 +57,15 @@ ssize_t aesd_read(struct file *filp, char __user *buf,
 
     PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
-    if (mutex_lock_interruptible(&dev->lock))
+    if (mutex_lock_interruptible(&dev->cb_lock))
         return -ERESTARTSYS;
 
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-                &dev->buffer, (size_t)*f_pos, &entry_offset);
+                &dev->circular_buffer, (size_t)*f_pos, &entry_offset);
 
     if (!entry) {
         /* No data at this offset — EOF */
-        mutex_unlock(&dev->lock);
+        mutex_unlock(&dev->cb_lock);
         return 0;
     }
 
@@ -74,14 +74,14 @@ ssize_t aesd_read(struct file *filp, char __user *buf,
         bytes_to_read = count;
 
     if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_read)) {
-        mutex_unlock(&dev->lock);
+        mutex_unlock(&dev->cb_lock);
         return -EFAULT;
     }
 
     *f_pos += bytes_to_read;
     retval  = (ssize_t)bytes_to_read;
 
-    mutex_unlock(&dev->lock);
+    mutex_unlock(&dev->cb_lock);
     return retval;
 }
 

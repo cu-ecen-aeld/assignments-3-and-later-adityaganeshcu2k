@@ -73,8 +73,7 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
    /*null check on user input*/
    if((NULL == add_entry) || (NULL == buffer)) return NULL;
    
-  /*Insert new entry*/
-  buffer->entry[buffer->in_offs] = *add_entry;
+
   
   /*If buffer already full we remove the oldest data*/
 
@@ -85,6 +84,9 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
             (buffer->out_offs + 1) %
             AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
+    
+    /*Insert new entry*/
+    buffer->entry[buffer->in_offs] = *add_entry;
     /* Advance write index */
     buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 

@@ -139,60 +139,34 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         
     }
     
-    //see if we find a newline character in the buffer
-    newline_indx = memchr(kbuf, '\n', count);
-    
-    //size of write command if newline character is found
+    size_t processed = 0;
+
+    while(processed < count){
+    newline_indx = memchr(kbuf + processed, '\n', count - processed);
+    size_t chunk_size;
+
     if(newline_indx){
-    	
-    	size_wc = newline_indx - kbuf + 1;
-    
+        chunk_size = newline_indx - (kbuf + processed) + 1;
+    } else {
+        chunk_size = count - processed;
     }
-    else{
-     	size_wc = 0;
+
+    dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr,
+                                         dev->buffer_entry.size + chunk_size,
+                                         GFP_KERNEL);
+    memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size,
+           kbuf + processed, chunk_size);
+    dev->buffer_entry.size += chunk_size;
+
+    processed += chunk_size;
+
+    if(newline_indx){
+        const char *old = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
+        if(old) kfree((void*)old);
+        dev->buffer_entry.size = 0;
+        dev->buffer_entry.buffptr = NULL;
     }
-    
-    //get the mutex to add onto the circular buffer
-    retval = mutex_lock_interruptible(&dev->cb_lock);
-    if(retval != 0){
-    	retval = -ERESTART;
-        PDEBUG("Error: Failed to acquire a lock");
-        goto copy_error;
-    }
-    
-    if(size_wc>0){
-    
-    	//reallocating more memory for the entry
-    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size+size_wc, GFP_KERNEL);
-    	if(dev->buffer_entry.buffptr == NULL){
-    	   PDEBUG("Error: Reallocation failed");
-    	   retval = -ENOMEM;
-    	   goto lock_error;
-    	}
-    	
-    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf, size_wc);
-    	dev->buffer_entry.size += size_wc;
-    	
-    	const char *ptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
-    	if(ptr){
-    	  kfree(ptr);
-    	}
-    	
-    	dev->buffer_entry.size = 0;
-    	dev->buffer_entry.buffptr = NULL;
-    } 
-    else
-    {
-    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size + count, GFP_KERNEL);
-    	if(dev->buffer_entry.buffptr == NULL)
-    	{
-    	  PDEBUG("Error: Reallocation failed");
-    	  retval = -ENOMEM;
-    	  goto lock_error;
-    	}
-    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf,count);
-    	dev->buffer_entry.size += count;
-    }
+}
     
     retval = count;
     

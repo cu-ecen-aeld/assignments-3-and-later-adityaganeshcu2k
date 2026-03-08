@@ -122,7 +122,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     bytes_not_copied = copy_from_user((char *)dev->buffer_entry.buffptr + dev->buffer_entry.size, buf, count);
     
     if (bytes_not_copied != 0) {
-        mutex_unlock(&dev->lock);
+        mutex_unlock(&dev->cb_lock);
         return -EFAULT; // Bad address space
     }
 

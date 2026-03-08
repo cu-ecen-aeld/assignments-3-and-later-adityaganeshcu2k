@@ -17,7 +17,14 @@
 #include <time.h>
 
 #define PORT 9000
+#define USE_AESD_CHAR_DEVICE 1
+
+#if USE_AESD_CHAR_DEVICE
+#define DATA_FILE "/dev/aesdchar"
+#else
 #define DATA_FILE "/var/tmp/aesdsocketdata"
+#endif
+
 #define BUFFER_SIZE 1024
 
 static int server_fd = -1;
@@ -50,6 +57,7 @@ void cleanup()
     closelog();
 }
 
+#if !USE_AESD_CHAR_DEVICE
 void* timestamp_thread(void *arg)
 {
     while (!exit_requested)
@@ -82,6 +90,7 @@ void* timestamp_thread(void *arg)
     }
     return NULL;
 }
+#endif
 
 void* client_handler(void *arg)
 {
@@ -221,12 +230,13 @@ int main(int argc, char *argv[])
     if (listen(server_fd, 10) < 0)
         return -1;
 
+    #if !USE_AESD_CHAR
     pthread_t time_thread;
     pthread_create(&time_thread,
                 NULL,
                 timestamp_thread,
-                NULL);
-
+                 NULL);
+    #endif
     SLIST_INIT(&thread_list);
 
     while (!exit_requested)

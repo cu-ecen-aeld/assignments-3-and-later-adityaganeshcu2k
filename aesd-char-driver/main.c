@@ -102,24 +102,24 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
     // 2. Lock the mutex
-    if (mutex_lock_interruptible(&dev->lock)) {
+    if (mutex_lock_interruptible(&dev->cb_lock)) {
         return -ERESTARTSYS;
     }
 
     // 3. Allocate/Reallocate memory
     // krealloc handles both the initial allocation (if buffptr is NULL) and resizing
-    new_buffer = krealloc(dev->partial_entry.buffptr, dev->partial_entry.size + count, GFP_KERNEL);
+    new_buffer = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size + count, GFP_KERNEL);
     if (!new_buffer) {
-        mutex_unlock(&dev->lock);
+        mutex_unlock(&dev->cb_lock);
         return -ENOMEM;
     }
 
     // Update the partial entry with the new pointer (krealloc might move the memory block)
-    dev->partial_entry.buffptr = new_buffer;
+    dev->buffer_entry.buffptr = new_buffer;
 
     // 4. Copy the new data from user space to the end of your new buffer
     // We offset the destination pointer by the existing size of the partial entry
-    bytes_not_copied = copy_from_user((char *)dev->partial_entry.buffptr + dev->partial_entry.size, buf, count);
+    bytes_not_copied = copy_from_user((char *)dev->buffer_entry.buffptr + dev->buffer_entry.size, buf, count);
     
     if (bytes_not_copied != 0) {
         mutex_unlock(&dev->lock);
@@ -127,14 +127,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // 5. Update the size
-    dev->partial_entry.size += count;
+    dev->buffer_entry.size += count;
 
     // 6. Check for a newline character
-    if (memchr(dev->partial_entry.buffptr, '\n', dev->partial_entry.size) != NULL) {
+    if (memchr(dev->buffer_entry.buffptr, '\n', dev->buffer_entry.size) != NULL) {
         
         // 7. If a newline is found:
         // Push the completed entry to the circular buffer
-        overwritten_buffptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->partial_entry);
+        overwritten_buffptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
         
         // Crucial: Free the oldest entry if the buffer was full and we overwrote it
         if (overwritten_buffptr != NULL) {
@@ -142,8 +142,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
         
         // Reset the partial entry so the next write starts fresh
-        dev->partial_entry.buffptr = NULL;
-        dev->partial_entry.size = 0;
+        dev->buffer_entry.buffptr = NULL;
+        dev->buffer_entry.size = 0;
     }
 
     // 8. Update file position and return value
@@ -151,7 +151,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     retval = count;
 
     // 9. Unlock the mutex
-    mutex_unlock(&dev->lock);
+    mutex_unlock(&dev->cb_lock);
 
     return retval;
 }

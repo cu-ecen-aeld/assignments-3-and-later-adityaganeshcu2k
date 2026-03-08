@@ -30,40 +30,35 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
     size_t char_offset,
     size_t *entry_offset_byte_rtn)
 {
-    // Reset output
+    // Reset the output variable
     *entry_offset_byte_rtn = 0;
 
-    // Empty buffer?
-    if (!buffer->full && buffer->in_offs == buffer->out_offs) {
+    // Check for an empty buffer condition
+    if (buffer->full == false && (buffer->in_offs == buffer->out_offs)) {
         return NULL;
     }
 
-    size_t total_entries_checked = 0;
-    uint8_t idx = buffer->out_offs;
+    int total_entries_visited = 0; // To track the number of entries visited
 
-    while (total_entries_checked < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
+    // Start looking for the specified character offset in the buffer
+    for (int seek_off = buffer->out_offs; 
+         total_entries_visited < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; 
+         total_entries_visited++, seek_off = (seek_off + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) 
+    {
+        size_t entry_size = buffer->entry[seek_off].size;
 
-        struct aesd_buffer_entry *entry = &buffer->entry[idx];
-
-        // If this entry is large enough to contain the char_offset
-        if (char_offset < entry->size) {
-            *entry_offset_byte_rtn = char_offset;
-            return entry;
-        }
-
-        // Otherwise, move to the next entry
-        char_offset -= entry->size;
-        idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-        total_entries_checked++;
-
-        // Stop if buffer not full and we've reached the write position
-        if (!buffer->full && idx == buffer->in_offs) {
-            break;
+        if (entry_size <= char_offset) {
+            // Offset exceeds the current entry, move to the next
+            char_offset -= entry_size;
+        } else {
+            // Found the entry containing the requested offset
+            *entry_offset_byte_rtn = char_offset; // This is the position within the found entry
+            return &buffer->entry[seek_off];
         }
     }
 
-    // Offset not found
-    *entry_offset_byte_rtn = 0;
+    // If we get here, the offset was not found in any entry
+    *entry_offset_byte_rtn = (size_t)-1; // Indicate that no valid entry was found
     return NULL;
 }
 

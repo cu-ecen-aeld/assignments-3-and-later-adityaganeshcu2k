@@ -92,67 +92,103 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
+    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+    char *kbuf = NULL;
+    const char *newline_indx = NULL;
+    size_t size_wc = 0;
+    struct aesd_dev *dev = NULL;
     
-    // 1. Extract your device pointer and declare variables
-    struct aesd_dev *dev = filp->private_data;
-    char *new_buffer = NULL;
-    unsigned long bytes_not_copied = 0;
-    const char *overwritten_buffptr = NULL;
-
-    PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
-
-    // 2. Lock the mutex
-    if (mutex_lock_interruptible(&dev->cb_lock)) {
-        return -ERESTARTSYS;
+    if(!filp || !buf || count <= 0 || !f_pos || *f_pos<0){
+      PDEBUG("Error : Input validation failed");
+      return - EINVAL;
     }
-
-    // 3. Allocate/Reallocate memory
-    // krealloc handles both the initial allocation (if buffptr is NULL) and resizing
-    new_buffer = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size + count, GFP_KERNEL);
-    if (!new_buffer) {
-        mutex_unlock(&dev->cb_lock);
-        return -ENOMEM;
-    }
-
-    // Update the partial entry with the new pointer (krealloc might move the memory block)
-    dev->buffer_entry.buffptr = new_buffer;
-
-    // 4. Copy the new data from user space to the end of your new buffer
-    // We offset the destination pointer by the existing size of the partial entry
-    bytes_not_copied = copy_from_user((char *)dev->buffer_entry.buffptr + dev->buffer_entry.size, buf, count);
     
-    if (bytes_not_copied != 0) {
-        mutex_unlock(&dev->cb_lock);
-        return -EFAULT; // Bad address space
+    //Get the aesd device structure
+    dev = filp->private_data;
+    if(dev == NULL){
+      	PDEBUG("Error: aesd device structure pointer is NULL");
+        return - EINVAL;
     }
-
-    // 5. Update the size
-    dev->buffer_entry.size += count;
-
-    // 6. Check for a newline character
-    if (memchr(dev->buffer_entry.buffptr, '\n', dev->buffer_entry.size) != NULL) {
-        
-        // 7. If a newline is found:
-        // Push the completed entry to the circular buffer
-        overwritten_buffptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
-        
-        // Crucial: Free the oldest entry if the buffer was full and we overwrote it
-        if (overwritten_buffptr != NULL) {
-            kfree(overwritten_buffptr);
-        }
-        
-        // Reset the partial entry so the next write starts fresh
-        dev->buffer_entry.buffptr = NULL;
-        dev->buffer_entry.size = 0;
+    
+    //allocate memory in kernel for the size requested by user
+    kbuf = kmalloc(count, GFP_KERNEL);
+    if(kbuf == NULL){
+    	PDEBUG("Error: Memory allocation failed");
+    	return -ENOMEM;
     }
-
-    // 8. Update file position and return value
-    *f_pos += count;
+    
+    //copy userspace data to kernel
+    retval = copy_from_user(kbuf,buf,count);
+    if(retval){
+        PDEBUG("Error: Failed to copy user space data to kernel");
+        retval = -EFAULT;
+        goto copy_error;
+        
+    }
+    
+    //see if we find a newline character in the buffer
+    newline_indx = memchr(kbuf, '\n', count);
+    
+    //size of write command if newline character is found
+    if(newline_indx){
+    	
+    	size_wc = newline_indx - kbuf + 1;
+    
+    }
+    else{
+     	size_wc = 0;
+    }
+    
+    //get the mutex to add onto the circular buffer
+    retval = mutex_lock_interruptible(&dev->cb_lock);
+    if(retval != 0){
+    	retval = -ERESTART;
+        PDEBUG("Error: Failed to acquire a lock");
+        goto copy_error;
+    }
+    
+    if(size_wc>0){
+    
+    	//reallocating more memory for the entry
+    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size+size_wc, GFP_KERNEL);
+    	if(dev->buffer_entry.buffptr == NULL){
+    	   PDEBUG("Error: Reallocation failed");
+    	   retval = -ENOMEM;
+    	   goto lock_error;
+    	}
+    	
+    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf, size_wc);
+    	dev->buffer_entry.size += size_wc;
+    	
+    	const char *ptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
+    	if(ptr){
+    	  kfree(ptr);
+    	}
+    	
+    	dev->buffer_entry.size = 0;
+    	dev->buffer_entry.buffptr = NULL;
+    } 
+    else
+    {
+    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size + count, GFP_KERNEL);
+    	if(dev->buffer_entry.buffptr == NULL)
+    	{
+    	  PDEBUG("Error: Reallocation failed");
+    	  retval = -ENOMEM;
+    	  goto lock_error;
+    	}
+    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf,count);
+    	dev->buffer_entry.size += count;
+    }
+    
     retval = count;
-
-    // 9. Unlock the mutex
-    mutex_unlock(&dev->cb_lock);
-
+    
+    
+lock_error:
+    mutex_unlock(&dev->cb_lock); 
+copy_error:
+    kfree(kbuf);	
+    	    
     return retval;
 }
 struct file_operations aesd_fops = {

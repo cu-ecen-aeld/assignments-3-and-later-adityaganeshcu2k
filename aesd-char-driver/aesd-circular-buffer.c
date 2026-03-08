@@ -86,7 +86,7 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
     }
     
     /*Insert new entry*/
-    //buffer->entry[buffer->in_offs] = *add_entry;
+    buffer->entry[buffer->in_offs] = *add_entry;
     /* Advance write index */
     buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 

@@ -46,58 +46,56 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
-                loff_t *f_pos)
+ssize_t aesd_read(struct file *filp, char __user *buf,
+                  size_t count, loff_t *f_pos)
 {
-    ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
- 
-    /*Input validation*/
-    if(!filp || !buf || !f_pos || *f_pos<0)
-    {
-       PDEBUG("Input validation failed");
-       return -EINVAL;
-    
-    }
-    
     struct aesd_dev *dev = filp->private_data;
+    ssize_t retval = 0;
     size_t entry_offset = 0;
     size_t bytes_to_copy = 0;
-    
-    retval = mutex_lock_interruptible(&dev->cb_lock);
-    if(retval != 0){
-    	PDEBUG("Error: Unable to acquire mutex");
-    	return -ERESTART;
-    }
-    
-    struct aesd_buffer_entry *temp = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circular_buffer, *f_pos,&entry_offset);
-    if(!temp){
-    	PDEBUG("Error: Entry for given position not found");
-    	retval = 0;
-    	goto lock_error;
-    }
-    
-    bytes_to_copy = temp->size - entry_offset;
-    if(bytes_to_copy > count){
-    	bytes_to_copy = count;
-    }
-    
-    retval = copy_to_user(buf, temp->buffptr + entry_offset , bytes_to_copy);
-    if(retval != 0){
-      bytes_to_copy -= retval;
-      PDEBUG("Error: Copying data to userspace failed");
-      retval = -EFAULT;
-      goto lock_error;
-    }
-    
-    *f_pos += bytes_to_copy;
-    retval = bytes_to_copy;
-    
+    struct aesd_buffer_entry *entry;
 
-lock_error:
+    /* Input validation */
+    if (!filp || !buf || !f_pos || *f_pos < 0)
+        return -EINVAL;
+
+    /* Acquire mutex */
+    if (mutex_lock_interruptible(&dev->cb_lock))
+        return -ERESTARTSYS;
+
+    while (count > 0)
+    {
+        entry = aesd_circular_buffer_find_entry_offset_for_fpos(
+                    &dev->circular_buffer,
+                    *f_pos,
+                    &entry_offset);
+
+        /* No more data available */
+        if (!entry)
+            break;
+
+        /* Determine bytes available in this entry */
+        bytes_to_copy = entry->size - entry_offset;
+
+        if (bytes_to_copy > count)
+            bytes_to_copy = count;
+
+        /* Copy data to userspace */
+        if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_copy))
+        {
+            retval = -EFAULT;
+            goto out;
+        }
+
+        /* Update positions */
+        buf += bytes_to_copy;
+        *f_pos += bytes_to_copy;
+        count -= bytes_to_copy;
+        retval += bytes_to_copy;
+    }
+
+out:
     mutex_unlock(&dev->cb_lock);
-    PDEBUG("Error: Mutex unlocked"); 
-    
     return retval;
 }
 
@@ -139,34 +137,60 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         
     }
     
-    size_t processed = 0;
-
-    while(processed < count){
-    newline_indx = memchr(kbuf + processed, '\n', count - processed);
-    size_t chunk_size;
-
+    //see if we find a newline character in the buffer
+    newline_indx = memchr(kbuf, '\n', count);
+    
+    //size of write command if newline character is found
     if(newline_indx){
-        chunk_size = newline_indx - (kbuf + processed) + 1;
-    } else {
-        chunk_size = count - processed;
+    	
+    	size_wc = newline_indx - kbuf + 1;
+    
     }
-
-    dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr,
-                                         dev->buffer_entry.size + chunk_size,
-                                         GFP_KERNEL);
-    memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size,
-           kbuf + processed, chunk_size);
-    dev->buffer_entry.size += chunk_size;
-
-    processed += chunk_size;
-
-    if(newline_indx){
-        const char *old = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
-        if(old) kfree((void*)old);
-        dev->buffer_entry.size = 0;
-        dev->buffer_entry.buffptr = NULL;
+    else{
+     	size_wc = 0;
     }
-}
+    
+    //get the mutex to add onto the circular buffer
+    retval = mutex_lock_interruptible(&dev->cb_lock);
+    if(retval != 0){
+    	retval = -ERESTART;
+        PDEBUG("Error: Failed to acquire a lock");
+        goto copy_error;
+    }
+    
+    if(size_wc>0){
+    
+    	//reallocating more memory for the entry
+    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size+size_wc, GFP_KERNEL);
+    	if(dev->buffer_entry.buffptr == NULL){
+    	   PDEBUG("Error: Reallocation failed");
+    	   retval = -ENOMEM;
+    	   goto lock_error;
+    	}
+    	
+    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf, size_wc);
+    	dev->buffer_entry.size += size_wc;
+    	
+    	const char *ptr = aesd_circular_buffer_add_entry(&dev->circular_buffer, &dev->buffer_entry);
+    	if(ptr){
+    	  kfree(ptr);
+    	}
+    	
+    	dev->buffer_entry.size = 0;
+    	dev->buffer_entry.buffptr = NULL;
+    } 
+    else
+    {
+    	dev->buffer_entry.buffptr = krealloc(dev->buffer_entry.buffptr, dev->buffer_entry.size + count, GFP_KERNEL);
+    	if(dev->buffer_entry.buffptr == NULL)
+    	{
+    	  PDEBUG("Error: Reallocation failed");
+    	  retval = -ENOMEM;
+    	  goto lock_error;
+    	}
+    	memcpy(dev->buffer_entry.buffptr + dev->buffer_entry.size, kbuf,count);
+    	dev->buffer_entry.size += count;
+    }
     
     retval = count;
     

@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
     if (listen(server_fd, 10) < 0)
         return -1;
 
-    #if !USE_AESD_CHAR
+    #if !USE_AESD_CHAR_DEVICE
     pthread_t time_thread;
     pthread_create(&time_thread,
                 NULL,
@@ -300,9 +300,11 @@ int main(int argc, char *argv[])
         free(node);
     }
 
+    #if !USE_AESD_CHAR_DEVICE
     // Stop timestamp thread
     pthread_join(time_thread, NULL);
-
+    #endif
+    
     pthread_mutex_destroy(&file_mutex);
 
     cleanup();

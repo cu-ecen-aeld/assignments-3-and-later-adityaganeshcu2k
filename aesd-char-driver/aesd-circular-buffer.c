@@ -30,35 +30,35 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
     size_t char_offset,
     size_t *entry_offset_byte_rtn)
 {
-    // Reset the output variable
-    *entry_offset_byte_rtn = 0;
+    size_t cumulative_size = 0;
+    uint8_t index = buffer->out_offs;
+    uint8_t entries_checked = 0;
 
-    // Check for an empty buffer condition
-    if (buffer->full == false && (buffer->in_offs == buffer->out_offs)) {
-        return NULL;
-    }
-
-    int total_entries_visited = 0; // To track the number of entries visited
-
-    // Start looking for the specified character offset in the buffer
-    for (int seek_off = buffer->out_offs; 
-         total_entries_visited < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; 
-         total_entries_visited++, seek_off = (seek_off + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) 
+    while (entries_checked < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
     {
-        size_t entry_size = buffer->entry[seek_off].size;
+        /* Stop if buffer not full and we reached write position */
+        if (!buffer->full && index == buffer->in_offs)
+            break;
 
-        if (entry_size <= char_offset) {
-            // Offset exceeds the current entry, move to the next
-            char_offset -= entry_size;
-        } else {
-            // Found the entry containing the requested offset
-            *entry_offset_byte_rtn = char_offset; // This is the position within the found entry
-            return &buffer->entry[seek_off];
+        struct aesd_buffer_entry *entry =
+            &buffer->entry[index];
+            
+        /* Check if offset lies inside this entry */
+        if (char_offset < cumulative_size + entry->size)
+        {
+            *entry_offset_byte_rtn =
+                char_offset - cumulative_size;
+
+            return entry;
         }
-    }
 
-    // If we get here, the offset was not found in any entry
-    *entry_offset_byte_rtn = (size_t)-1; // Indicate that no valid entry was found
+        cumulative_size += entry->size;
+
+        index = (index + 1) %
+                AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+        entries_checked++;
+    }
     return NULL;
 }
 

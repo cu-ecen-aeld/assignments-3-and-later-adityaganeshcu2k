@@ -50,12 +50,14 @@ ssize_t aesd_read(struct file *filp, char __user *buf,
                   size_t count, loff_t *f_pos)
 {
     struct aesd_dev *dev = filp->private_data;
-    ssize_t retval = 0;
-    size_t entry_offset = 0;
-    size_t bytes_to_copy = 0;
+    ssize_t bytes_read_total = 0;
+    size_t bytes_to_copy;
+    size_t entry_offset;
     struct aesd_buffer_entry *entry;
+    uint8_t index;
+    uint8_t entries_checked = 0;
+    size_t cumulative_size = 0;
 
-    /* Input validation */
     if (!filp || !buf || !f_pos || *f_pos < 0)
         return -EINVAL;
 
@@ -63,40 +65,45 @@ ssize_t aesd_read(struct file *filp, char __user *buf,
     if (mutex_lock_interruptible(&dev->cb_lock))
         return -ERESTARTSYS;
 
-    while (count > 0)
-    {
-        entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-                    &dev->circular_buffer,
-                    *f_pos,
-                    &entry_offset);
+    /* Start reading from the oldest entry in circular buffer */
+    index = dev->circular_buffer.out_offs;
 
-        /* No more data available */
-        if (!entry)
+    while (entries_checked < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED && count > 0) {
+        /* Stop if buffer not full and we reached in_offs */
+        if (!dev->circular_buffer.full && index == dev->circular_buffer.in_offs)
             break;
 
-        /* Determine bytes available in this entry */
-        bytes_to_copy = entry->size - entry_offset;
+        entry = &dev->circular_buffer.entry[index];
 
-        if (bytes_to_copy > count)
-            bytes_to_copy = count;
+        /* Skip empty entries */
+        if (entry->buffptr != NULL && entry->size > 0) {
+            /* Only copy the portion after *f_pos */
+            if (*f_pos < cumulative_size + entry->size) {
+                entry_offset = (*f_pos > cumulative_size) ? (*f_pos - cumulative_size) : 0;
+                bytes_to_copy = entry->size - entry_offset;
+                if (bytes_to_copy > count)
+                    bytes_to_copy = count;
 
-        /* Copy data to userspace */
-        if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_copy))
-        {
-            retval = -EFAULT;
-            goto out;
+                if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_copy)) {
+                    bytes_read_total = -EFAULT;
+                    goto out;
+                }
+
+                buf += bytes_to_copy;
+                *f_pos += bytes_to_copy;
+                bytes_read_total += bytes_to_copy;
+                count -= bytes_to_copy;
+            }
         }
 
-        /* Update positions */
-        buf += bytes_to_copy;
-        *f_pos += bytes_to_copy;
-        count -= bytes_to_copy;
-        retval += bytes_to_copy;
+        cumulative_size += entry->size;
+        index = (index + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        entries_checked++;
     }
 
 out:
     mutex_unlock(&dev->cb_lock);
-    return retval;
+    return bytes_read_total;
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,

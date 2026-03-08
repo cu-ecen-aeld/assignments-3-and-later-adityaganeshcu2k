@@ -67,10 +67,11 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
+   const char* ret = NULL; //this pointer is returned so that we can free the oldest entry malloced buffer
    /*null check on user input*/
-   if((NULL == add_entry) || (NULL == buffer)) return;
+   if((NULL == add_entry) || (NULL == buffer)) return NULL;
    
   /*Insert new entry*/
   buffer->entry[buffer->in_offs] = *add_entry;
@@ -78,17 +79,21 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
   /*If buffer already full we remove the oldest data*/
 
     if (buffer->full) {
+        
+        ret = buffer->entry[buffer->out_offs].buffptr;//return the oldest entry buffer so that it can be freed
         buffer->out_offs =
             (buffer->out_offs + 1) %
             AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
-  /* Advance write index */
-  buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    /* Advance write index */
+    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
- /* Check if buffer became full */
- if (buffer->in_offs == buffer->out_offs) {
-         buffer->full = true;
- }
+    /* Check if buffer became full */
+    if (buffer->in_offs == buffer->out_offs) {
+	 buffer->full = true;
+    }
+    
+    return ret;
 
 }
 

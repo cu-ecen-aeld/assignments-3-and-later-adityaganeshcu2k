@@ -81,7 +81,7 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
 
     if (buffer->full) {
         
-        ret = buffer->entry[buffer->out_offs].buffptr;//return the oldest entry buffer so that it can be freed
+        ret = buffer->entry[buffer->in_offs].buffptr;//return the oldest entry buffer so that it can be freed
         buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
     

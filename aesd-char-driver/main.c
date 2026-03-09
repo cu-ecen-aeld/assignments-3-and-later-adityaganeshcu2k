@@ -52,39 +52,55 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf,
                   size_t count, loff_t *f_pos)
 {
-    struct aesd_dev *dev = filp->private_data;
-    struct aesd_buffer_entry *entry;
-    size_t entry_offset = 0;
-    size_t bytes_to_read;
     ssize_t retval = 0;
-
-    PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
-
-    if (mutex_lock_interruptible(&dev->cb_lock))
-        return -ERESTARTSYS;
-
-    entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-                &dev->circular_buffer, (size_t)*f_pos, &entry_offset);
-
-    if (!entry) {
-        /* No data at this offset — EOF */
-        mutex_unlock(&dev->cb_lock);
-        return 0;
+    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
+ 
+    /*Input validation*/
+    if(!filp || !buf || !f_pos || *f_pos<0)
+    {
+       PDEBUG("Input validation failed");
+       return -EINVAL;
+    
     }
-
-    bytes_to_read = entry->size - entry_offset;
-    if (bytes_to_read > count)
-        bytes_to_read = count;
-
-    if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_read)) {
-        mutex_unlock(&dev->cb_lock);
-        return -EFAULT;
+    
+    struct aesd_dev *dev = filp->private_data;
+    size_t entry_offset = 0;
+    size_t bytes_to_copy = 0;
+    
+    retval = mutex_lock_interruptible(&dev->cb_lock);
+    if(retval != 0){
+    	PDEBUG("Error: Unable to acquire mutex");
+    	return -ERESTART;
     }
+    
+    struct aesd_buffer_entry *temp = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circular_buffer, *f_pos,&entry_offset);
+    if(!temp){
+    	PDEBUG("Error: Entry for given position not found");
+    	retval = 0;
+    	goto lock_error;
+    }
+    
+    bytes_to_copy = temp->size - entry_offset;
+    if(bytes_to_copy > count){
+    	bytes_to_copy = count;
+    }
+    
+    retval = copy_to_user(buf, temp->buffptr + entry_offset , bytes_to_copy);
+    if(retval != 0){
+      bytes_to_copy -= retval;
+      PDEBUG("Error: Copying data to userspace failed");
+      retval = -EFAULT;
+      goto lock_error;
+    }
+    
+    *f_pos += bytes_to_copy;
+    retval = bytes_to_copy;
+    
 
-    *f_pos += bytes_to_read;
-    retval  = (ssize_t)bytes_to_read;
-
+lock_error:
     mutex_unlock(&dev->cb_lock);
+    PDEBUG("Error: Mutex unlocked"); 
+    
     return retval;
 }
 

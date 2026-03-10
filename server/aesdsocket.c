@@ -52,8 +52,9 @@ void cleanup()
 {
     if (server_fd != -1)
         close(server_fd);
-
+    #if !USE_AESD_CHAR_DEVICE
     remove(DATA_FILE);
+    #endif
     closelog();
 }
 
@@ -187,7 +188,9 @@ int main(int argc, char *argv[])
 
     openlog("aesdsocket", LOG_PID, LOG_USER);
 
+    #if !USE_AESD_CHAR_DEVICE
     remove(DATA_FILE);
+    #endif
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;

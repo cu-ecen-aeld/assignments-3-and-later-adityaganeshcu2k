@@ -2,8 +2,8 @@
 
 case "$1" in
     start)
-        echo "Loading aesdchar"
-        aesdchar_load
+        #echo "Loading aesdchar"
+        #aesdchar_load
         ;;
     stop)
         echo "Unloading aesdchar"

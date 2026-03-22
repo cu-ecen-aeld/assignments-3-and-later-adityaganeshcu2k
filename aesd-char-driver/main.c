@@ -80,7 +80,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
      //Set file position relative to the end 
      case SEEK_END:
      {
-        ret = mutex_lock_interruptible(&dev->buffer_lock);
+        ret = mutex_lock_interruptible(&dev->cb_lock);
 	if(ret !=0)
 	{
 	   ret = -ERESTART;
@@ -91,15 +91,15 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
 	int total_size = 0;
 	
 	//Calculate the total size of the buffer
-	for (int i = dev->buffer.out_offs;
-	     i != dev->buffer.in_offs;
+	for (int i = dev->circular_buffer.out_offs;
+	     i != dev->circular_buffer.in_offs;
 	     i = (i + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
 	{
 	    total_size += dev->buffer.entry[i].size;
 	}
 	
 	
-	mutex_unlock(&dev->buffer_lock);
+	mutex_unlock(&dev->cb_lock);
 	ret = total_size-1+offset;
        break;
      }
@@ -110,7 +110,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
      }
    }
    
-   filp->f_ops = ret;
+   filp->f_pos = ret;
    
 
 error:
@@ -163,12 +163,12 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         goto error;
     }
     // Calculate the total length
-    for(int i=dev->circular_buffer.out_offs;i!=seek_params.write_cmd;)
+    for(int i=dev->circular_buffer.out_offs;i!=seek_param.write_cmd;)
     {
         total_length+=dev->circular_buffer.entry[i].size;
         i = (i+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
-    filp->f_pos = total_length + seek_params.write_cmd_offset;
+    filp->f_pos = total_length + seek_param.write_cmd_offset;
     mutex_unlock(&dev->cb_lock);
   }
   

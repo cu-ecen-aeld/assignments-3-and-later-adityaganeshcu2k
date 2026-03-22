@@ -104,7 +104,8 @@ void* client_handler(void *arg)
     size_t packet_size = 0;
 
     ssize_t bytes_read;
-
+    struct aesd_seekto seek_to; // Struct for AESDCHAR_IOCSEEKTO
+    
     while ((bytes_read = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
     {
         char *newline = memchr(buffer, '\n', bytes_read);
@@ -129,7 +130,7 @@ void* client_handler(void *arg)
 		    syslog(LOG_INFO, "Parsed ioctl command AESDCHAR_IOCSEEKTO with command %u, offset %u", seek_to.write_cmd, seek_to.write_cmd_offset);
 
 		    // Perform the ioctl operation
-		    if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1)
+		    if (ioctl(client_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1)
 		    {
 			syslog(LOG_ERR, "ioctl AESDCHAR_IOCSEEKTO failed: %s", strerror(errno));
 			free(buffer);

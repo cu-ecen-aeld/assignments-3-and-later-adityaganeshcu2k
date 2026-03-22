@@ -95,7 +95,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
 	     i != dev->circular_buffer.in_offs;
 	     i = (i + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
 	{
-	    total_size += dev->buffer.entry[i].size;
+	    total_size += dev->circular_buffer.entry[i].size;
 	}
 	
 	
@@ -122,7 +122,7 @@ error:
 long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) 
 {
   long retval = 0;
-  
+  int total_length = 0;
   if(!filp)
   {
     retval = -EINVAL;

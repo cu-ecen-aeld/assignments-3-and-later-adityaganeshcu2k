@@ -15,7 +15,8 @@
 #include <pthread.h>
 #include <sys/queue.h>
 #include <time.h>
-
+#include <sys/ioctl.h>
+#include "../aesd-char-driver/aesd_ioctl.h" 
 #define PORT 9000
 #define USE_AESD_CHAR_DEVICE 1
 

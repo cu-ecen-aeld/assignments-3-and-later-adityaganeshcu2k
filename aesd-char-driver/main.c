@@ -52,6 +52,8 @@ int aesd_release(struct inode *inode, struct file *filp)
 
 loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
 {
+
+   struct aesd_dev *dev = filp->private_data;
    int ret = 0;
    //Check if file pointer is null
    if(!filp)
@@ -81,7 +83,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
         ret = mutex_lock_interruptible(&dev->buffer_lock);
 	if(ret !=0)
 	{
-	   ret_value = -ERESTART;
+	   ret = -ERESTART;
 	   PDEBUG("Error: Unable to acquire mutex");
 	   goto error;
 	}
@@ -108,7 +110,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset , int whence)
      }
    }
    
-   file->f_ops = ret;
+   filp->f_ops = ret;
    
 
 error:
@@ -121,7 +123,7 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
   long retval = 0;
   
-  if(!flip)
+  if(!filp)
   {
     retval = -EINVAL;
     goto error;
@@ -135,14 +137,14 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     //Copy from user space to kernel space
     if (copy_from_user(&seek_param, (struct aesd_seekto __user *)arg, sizeof(seek_param)))
     {
-        ret_value = -EFAULT;
+        retval = -EFAULT;
         goto error;
     }
     
     //Check if write_cmd greater than max write operations
     if(seek_param.write_cmd > AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
     {
-        ret_value = -EINVAL;
+        retval = -EINVAL;
         goto error; 
     }
     
@@ -150,15 +152,15 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
     if(seek_param.write_cmd_offset > dev->circular_buffer.entry[seek_param.write_cmd].size)
     {
-        ret_value = -EINVAL;
-        goto exit; 
+        retval = -EINVAL;
+        goto error; 
     }
     //Lock mutex
-    ret_value = mutex_lock_interruptible(&dev->cb_lock);
-    if(ret_value !=0)
+    retval = mutex_lock_interruptible(&dev->cb_lock);
+    if(retval !=0)
     {
-        ret_value = -ERESTART;
-        goto exit;
+        retval = -ERESTART;
+        goto error;
     }
     // Calculate the total length
     for(int i=dev->circular_buffer.out_offs;i!=seek_params.write_cmd;)

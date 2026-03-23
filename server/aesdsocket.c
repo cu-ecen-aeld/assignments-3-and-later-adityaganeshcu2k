@@ -146,7 +146,9 @@ void* client_handler(void *arg)
 
 		    // Since this was an ioctl command, skip writing to the file
 		    free(packet);
-		    return 0;
+		    packet = NULL;
+		    packet_size = 0;
+		    continue;
 		}
 		else
 		{

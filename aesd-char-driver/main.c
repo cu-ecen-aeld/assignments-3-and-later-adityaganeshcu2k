@@ -163,10 +163,10 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         goto error;
     }
     // Calculate the total length
-    for(int i=dev->circular_buffer.out_offs;i!=seek_param.write_cmd;)
+    for(int i=dev->circular_buffer.out_offs;i!=seek_param.write_cmd; i = (i+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;)
     {
         total_length+=dev->circular_buffer.entry[i].size;
-        i = (i+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
     }
     filp->f_pos = total_length + seek_param.write_cmd_offset;
     mutex_unlock(&dev->cb_lock);

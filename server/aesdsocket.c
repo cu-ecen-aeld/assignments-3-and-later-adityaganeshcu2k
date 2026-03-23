@@ -129,26 +129,51 @@ void* client_handler(void *arg)
 		{
 		    syslog(LOG_INFO, "Parsed ioctl command AESDCHAR_IOCSEEKTO with command %u, offset %u", seek_to.write_cmd, seek_to.write_cmd_offset);
 
-		    int dev_fd = open("/dev/aesdchar", O_RDWR);
-		    if (dev_fd < 0) {
+		    fd = open("/dev/aesdchar", O_RDWR);
+		    if (fd < 0) {
 			    syslog(LOG_ERR, "Failed to open device for ioctl: %s", strerror(errno));
 		    } 
 		    else {
-			   if (ioctl(dev_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1) {
+			   if (ioctl(fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1) {
 				syslog(LOG_ERR, "AESDCHAR_IOCSEEKTO ioctl failed: %s", strerror(errno));
 				free(packet);
 			    } else {
 				syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO ioctl successful: cmd %u offset %u",
 				       seek_to.write_cmd, seek_to.write_cmd_offset);
 			    }
-			    close(dev_fd);
+			    
 		   }
 
 		    // Since this was an ioctl command, skip writing to the file
 		    free(packet);
 		    packet = NULL;
 		    packet_size = 0;
-		    continue;
+		    
+		    // LOCK FILE READ
+		    pthread_mutex_lock(&file_mutex);
+
+		    lseek(fd, 0, SEEK_SET);
+		    if (fd >= 0)
+		    {
+		        while ((bytes_read = read(fd, buffer, BUFFER_SIZE)) > 0)
+		        {
+		            ssize_t total_sent = 0;
+		            while (total_sent < bytes_read)
+		            {
+		                ssize_t sent = send(client_fd,
+		                                    buffer + total_sent,
+		                                    bytes_read - total_sent,
+		                                    0);
+		                if (sent <= 0)
+		                    break;
+		                total_sent += sent;
+		            }
+		        }
+		        close(fd);
+		    }
+
+		    pthread_mutex_unlock(&file_mutex);
+		    return 0;
 		}
 		else
 		{

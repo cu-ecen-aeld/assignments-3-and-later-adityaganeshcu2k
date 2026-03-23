@@ -129,14 +129,20 @@ void* client_handler(void *arg)
 		{
 		    syslog(LOG_INFO, "Parsed ioctl command AESDCHAR_IOCSEEKTO with command %u, offset %u", seek_to.write_cmd, seek_to.write_cmd_offset);
 
-		    // Perform the ioctl operation
-		    if (ioctl(client_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1)
-		    {
-			syslog(LOG_ERR, "ioctl AESDCHAR_IOCSEEKTO failed: %s", strerror(errno));
-			free(buffer);
-			return -1;
-		    }
-		    syslog(LOG_INFO, "Seek operation successful");
+		    int dev_fd = open("/dev/aesdchar", O_RDWR);
+		    if (dev_fd < 0) {
+			    syslog(LOG_ERR, "Failed to open device for ioctl: %s", strerror(errno));
+		    } 
+		    else {
+			   if (ioctl(dev_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1) {
+				syslog(LOG_ERR, "AESDCHAR_IOCSEEKTO ioctl failed: %s", strerror(errno));
+				free(buffer);
+			    } else {
+				syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO ioctl successful: cmd %u offset %u",
+				       seek_to.write_cmd, seek_to.write_cmd_offset);
+			    }
+			    close(dev_fd);
+		   }
 
 		    // Since this was an ioctl command, skip writing to the file
 		    free(buffer);

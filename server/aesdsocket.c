@@ -122,10 +122,10 @@ void* client_handler(void *arg)
             packet_size += chunk_len;
             
 	// Check if the buffer contains an ioctl command
-	    if (strncmp(buffer, "AESDCHAR_IOCSEEKTO:", 19) == 0)
+	    if (strncmp(packet, "AESDCHAR_IOCSEEKTO:", 19) == 0)
 	    {
 		// Extract command and offset from the received data
-		if (sscanf(buffer + 19, "%u,%u", &seek_to.write_cmd, &seek_to.write_cmd_offset) == 2)
+		if (sscanf(packet + 19, "%u,%u", &seek_to.write_cmd, &seek_to.write_cmd_offset) == 2)
 		{
 		    syslog(LOG_INFO, "Parsed ioctl command AESDCHAR_IOCSEEKTO with command %u, offset %u", seek_to.write_cmd, seek_to.write_cmd_offset);
 
@@ -136,7 +136,7 @@ void* client_handler(void *arg)
 		    else {
 			   if (ioctl(dev_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1) {
 				syslog(LOG_ERR, "AESDCHAR_IOCSEEKTO ioctl failed: %s", strerror(errno));
-				free(buffer);
+				free(packet);
 			    } else {
 				syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO ioctl successful: cmd %u offset %u",
 				       seek_to.write_cmd, seek_to.write_cmd_offset);
@@ -145,7 +145,7 @@ void* client_handler(void *arg)
 		   }
 
 		    // Since this was an ioctl command, skip writing to the file
-		    free(buffer);
+		    free(packet);
 		    return 0;
 		}
 		else

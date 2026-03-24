@@ -1,4 +1,11 @@
-/*References :- https://beej.us/guide/bgnet/html/ , http://man7.org/linux/man-pages/man8/start-stop-daemon.8.html , https://chatgpt.com/share/6992b468-ee74-8008-834b-cb796a405b88*/
+/*References :- https://beej.us/guide/bgnet/html/ , http://man7.org/linux/man-pages/man8/start-stop-daemon.8.html , https://chatgpt.com/share/6992b468-ee74-8008-834b-cb796a405b88
+
+https://chatgpt.com/c/69c08a44-97c8-83e8-835c-b2de3e35994b
+
+
+
+*/
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +22,8 @@
 #include <pthread.h>
 #include <sys/queue.h>
 #include <time.h>
-
+#include <sys/ioctl.h>
+#include "../aesd-char-driver/aesd_ioctl.h" 
 #define PORT 9000
 #define USE_AESD_CHAR_DEVICE 1
 
@@ -52,8 +60,9 @@ void cleanup()
 {
     if (server_fd != -1)
         close(server_fd);
-
+    #if !USE_AESD_CHAR_DEVICE
     remove(DATA_FILE);
+    #endif
     closelog();
 }
 
@@ -102,7 +111,8 @@ void* client_handler(void *arg)
     size_t packet_size = 0;
 
     ssize_t bytes_read;
-
+    struct aesd_seekto seek_to; // Struct for AESDCHAR_IOCSEEKTO
+    
     while ((bytes_read = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
     {
         char *newline = memchr(buffer, '\n', bytes_read);
@@ -117,6 +127,65 @@ void* client_handler(void *arg)
             packet = temp;
             memcpy(packet + packet_size, buffer, chunk_len);
             packet_size += chunk_len;
+            
+
+	    if (strncmp(packet, "AESDCHAR_IOCSEEKTO:", 19) == 0)
+	    {
+
+		if (sscanf(packet + 19, "%u,%u", &seek_to.write_cmd, &seek_to.write_cmd_offset) == 2)
+		{
+
+
+		    int dev_fd = open("/dev/aesdchar", O_RDWR);
+		    if (dev_fd< 0) {
+			    syslog(LOG_ERR, "Failed to open device for ioctl: %s", strerror(errno));
+		    } 
+		    else {
+			   if (ioctl(dev_fd, AESDCHAR_IOCSEEKTO, &seek_to) == -1) {
+				free(packet);
+			    } else {
+				syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO successful: cmd %u offset %u",
+				       seek_to.write_cmd, seek_to.write_cmd_offset);
+			    }
+			    
+		   }
+
+		    // Since this was an ioctl command, skip writing to the file
+		    free(packet);
+		    packet = NULL;
+		    packet_size = 0;
+		    
+		    // LOCK FILE READ
+		    pthread_mutex_lock(&file_mutex);
+
+		    lseek(dev_fd, 0, SEEK_SET);
+		    if (dev_fd >= 0)
+		    {
+		        while ((bytes_read = read(dev_fd, buffer, BUFFER_SIZE)) > 0)
+		        {
+		            ssize_t total_sent = 0;
+		            while (total_sent < bytes_read)
+		            {
+		                ssize_t sent = send(client_fd,
+		                                    buffer + total_sent,
+		                                    bytes_read - total_sent,
+		                                    0);
+		                if (sent <= 0)
+		                    break;
+		                total_sent += sent;
+		            }
+		        }
+		        close(dev_fd);
+		    }
+
+		    pthread_mutex_unlock(&file_mutex);
+		    return 0;
+		}
+		else
+		{
+		    syslog(LOG_ERR, "Failed to parse AESDCHAR_IOCSEEKTO command and offset");
+		}
+	    }
 
             // LOCK FILE WRITE
             pthread_mutex_lock(&file_mutex);
@@ -187,7 +256,9 @@ int main(int argc, char *argv[])
 
     openlog("aesdsocket", LOG_PID, LOG_USER);
 
+    #if !USE_AESD_CHAR_DEVICE
     remove(DATA_FILE);
+    #endif
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;
